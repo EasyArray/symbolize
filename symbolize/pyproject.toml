@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "symbolize"
+version = "0.0.1"
+description = "Core DSL architecture + demo First-Order-Logic DSL"
+authors = [{name = "Ezra Keshet"}]
+requires-python = ">=3.11"
+dependencies = [
+  "graphviz>=0.20",
+  "svgling>=0.3"
+]
