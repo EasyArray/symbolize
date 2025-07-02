@@ -67,7 +67,7 @@ class Node():
 
       val = asteval(self)
       match val:
-        case FunctionType(__name__ = '<lambda>'): return Node(val)
+        case FunctionType(__name__ = '<lambda>'): return type(self)(val)
       return val
     except NameError as e:
       print(e)
@@ -75,12 +75,16 @@ class Node():
 
   def children(self):
     """ Return the ast node children as Node instances. """
-    return [Node(c) for c in ast.iter_child_nodes(self.ast)
+    return [type(self)(c) for c in ast.iter_child_nodes(self.ast)
                     if isinstance(c, ast.expr)                ]
 
+  def label(self):
+    """ Return a graphviz label for the Node"""
+    return repr(self)
+  
   def as_list(self):
     """ Convert the Node to a list representation for visualization. """
-    return [repr(self), *(c.as_list() for c in self.children())]
+    return [self.label(), *(c.as_list() for c in self.children())]
 
   def _repr_svg_(self):
     tree = draw_tree(self.as_list())
@@ -89,11 +93,11 @@ class Node():
   def __call__(self, *args):
     args = [toast(arg) for arg in args]
     node = ast.Call(func=self.ast, args=args, keywords=[])
-    return Node(node)
+    return type(self)(node)
 
   def __and__(self, other):
     node = ast.BinOp(op=ast.BitAnd(), left=self.ast, right=toast(other))
-    return Node(node)
+    return type(self)(node)
 
   def __iadd__(self, other):      self.value += other; return self
   def __isub__(self, other):      self.value -= other; return self
