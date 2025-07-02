@@ -58,6 +58,13 @@ def asteval(node, env=None):
 
   # Eval
   code = compile(node, filename='', mode='eval')
+  globs = globals()
+  # If we are in a Jupyter notebook, add the user namespace to globals
+  try:
+    from IPython import get_ipython
+    globs |= get_ipython().user_ns
+  except ImportError:
+    pass
   return eval(code, None, env)
 
 def unparse(node):

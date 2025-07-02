@@ -22,6 +22,7 @@ class Node():
       case Node(ast=_ast):
         self.ast = _ast
       case FunctionType(__name__ = '<lambda>'):
+        from .lambda_utils import make_lambda
         self.ast = make_lambda(node)
       case _:
         self.ast = toast(node)
@@ -83,7 +84,7 @@ class Node():
 
   def _repr_svg_(self):
     tree = draw_tree(self.as_list())
-    return tree._repr_svg_()
+    return tree.pipe(format='svg').decode('utf-8')
 
   def __call__(self, *args):
     args = [toast(arg) for arg in args]
