@@ -2,6 +2,7 @@
 relation.py
 Defines the Relation class for logical relations, allowing set-like operations on tuples.
 """
+import ast
 import html
 from symbolize.core.node import Node
 
@@ -10,7 +11,7 @@ def tuplify(x):
   return x if isinstance(x, tuple) else (x,)
 
 class Relation(set):
-  """Relation class for logical relations. """
+  """Relation class for logical relations."""
 
   def __init__(self, s=None):
     if not s:
@@ -40,6 +41,11 @@ class Relation(set):
 class RelationNode(Node):
   """Node class for Relation, allowing set-like operations on tuples."""
 
+  def __init__(self, name, relation=None):
+    super().__init__(name, relation)
+    if isinstance(self.ast, ast.Name) and self.value is None:
+      self.value = Relation()
+
   def label(self):
     label = super().label()
     if '{}' in label:
@@ -56,6 +62,6 @@ def detectors(s):
   return (RelationNode(s, Relation()) for s in s.split())
 
 def ids(s):
-  """Convert a string of symbols into a list of characters."""
-  return list(s)
+  """Convert a string of symbols characters into a generator of Nodes."""
+  return (Node(c, c) for c in s)
 

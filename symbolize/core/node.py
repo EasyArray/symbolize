@@ -75,6 +75,7 @@ class Node():
 
   def children(self):
     """ Return the ast node children as Node instances. """
+    # Q: should the children be Nodes or Node subclasses?
     return [type(self)(c) for c in ast.iter_child_nodes(self.ast)
                     if isinstance(c, ast.expr)                ]
 
