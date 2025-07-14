@@ -1,0 +1,179 @@
+"""Module for generating diagrams of relations using Graphviz."""
+
+import itertools, html
+from dataclasses import dataclass, field
+from typing import List, Optional
+from graphviz import Source
+
+# ---------- id factory ------------------------------------------------
+_id_counter = itertools.count()
+
+def _new_id(prefix: str = "n") -> str:
+  return f"{prefix}{next(_id_counter)}"
+
+# ---------- HTML badge helpers ---------------------------------------
+def _badge(sym: str, val: Optional[str], fill="#EBDEF0") -> str:
+  inner_val = f'<TR><TD BGCOLOR="#FFF2CC">{html.escape(val)}</TD></TR>' if val else ""
+  return (
+      f'<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">'
+      f'<TR><TD BGCOLOR="{fill}"><B>{html.escape(sym)}</B></TD></TR>{inner_val}</TABLE>')
+
+def _leaf_badge(name: str, ext: Optional[str]) -> str:
+  ext_row = f'<TR><TD BGCOLOR="#FFF2CC">{html.escape(ext)}</TD></TR>' if ext else ""
+  return (
+      '<TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0">'
+      f'<TR><TD BGCOLOR="#D6EAF8"><B>{html.escape(name)}</B></TD></TR>{ext_row}</TABLE>')
+
+# ---------- core dataclass -------------------------------------------
+@dataclass
+class Diagram:
+  """Class to generate a Graphviz diagram for a relation."""
+  dot: str
+  root: str
+  left_anchor: str
+  expr: str
+  arg_ports: List[str] = field(default_factory=list)
+  children: List['Diagram'] = field(default_factory=list)
+  cluster_id: Optional[str] = None
+
+  def full_dot(self, name: str = "G"):
+    """Render the diagram as a Graphviz Source object."""
+    return f"""
+digraph {name} {{
+  rankdir=TB
+  graph [margin=0.2, ranksep=0.6, nodesep=0.1]
+  node  [fontname="Helvetica", fontsize=10]
+  edge  [fontname="Helvetica", arrowsize=0.7, color="#17202A"]
+  {self.dot}
+}}
+"""
+
+  def render(self, name: str = "G"):
+    """Render the diagram as a Graphviz Source object."""
+    return Source(self.full_dot(name))
+  
+  @property
+  def arity(self) -> int:
+    """Return the arity of the diagram."""
+    return len(self.arg_ports)
+
+
+def _add_ports(n, root):
+  dot = ''
+  ports = []
+  weight = 5 * n
+  last = root
+  for i in range(n):
+    port = _new_id('port')
+    ports.append(port)
+    dot += f'{port} [shape=point];\n'
+    dot += f'{last} -> {port} [arrowhead=none, style=invis, weight=2];\n'
+    last = port
+    weight -= 5
+  dot += '{ rank=same; ' + f'{root} ' + ' '.join(ports) + ' }\n'
+  return dot, ports
+
+
+# ---------- leaves ----------------------------------------------------
+def id(name: str) -> Diagram:
+  n = _new_id()
+  dot = (
+    f'{n} [label="{html.escape(name)}", shape=box, style="rounded,filled", '
+          'fillcolor="#E9EEF6", color="#4C6A88"]\n'
+  )
+  return Diagram(dot, n, n, name)
+
+def pred(name: str, arity: int = 1, ext: Optional[str] = None) -> Diagram:
+  n = _new_id()
+  dot = f'{n} [shape=plain, label=<{_leaf_badge(name, ext)}>]\n'
+
+  dot_ports, ports = _add_ports(arity, n)
+  dot += dot_ports
+
+  cid = _new_id('cluster')
+  return Diagram(
+    f'subgraph {cid} {{ label=""; style=dotted; margin=10;\n {dot} }}\n',
+    n, n, name, ports
+  )
+
+# ── operators ────────────────────────────────────────────────────────
+def op(sym, *kids, value=None):
+  if not kids:
+    raise ValueError
+
+  arity = kids[0].arity
+  print('ARITY', arity)
+  if any(kid.arity != arity for kid in kids):
+    raise ValueError
+
+  expr= (f"{sym}({kids[0].expr})"
+          if len(kids)==1
+          else '(' + f" {sym} ".join(k.expr for k in kids) + ')'
+        )
+  b = _new_id()
+  body = (
+    f'{b} [shape=plain, label=<{_badge(sym,value)}>];\n'
+      + "".join(k.dot for k in kids)
+  )
+
+  for i, k in enumerate(kids):
+    weight = 1 if i==0 else 0
+    constraint = True
+    body += f'{b} -> {k.root} [weight={weight}, constraint={constraint}];\n'
+
+
+  dot_ports, ports = _add_ports(arity, b)
+  body += dot_ports
+
+  for kid in kids:
+    for port, kid_port in zip(ports, kid.arg_ports):
+      body += f'{port} -> {kid_port} [weight=0, color=lightgray];\n'
+
+  cid = _new_id('cluster')
+  return Diagram(
+    f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dashed; margin=10;\n{body}}}\n',
+    b, kids[0].left_anchor, expr, ports, list(kids), cid
+  )
+
+# ---------- application  ----------------------
+def app(func: Diagram, *args: List[Diagram], value: Optional[str] = None) -> Diagram:
+  arg_exprs = ", ".join(a.expr for a in args)
+  expr = f"({func.expr})({arg_exprs})"
+  badge = _new_id()
+
+  # base body: () badge + function subtree + args subtrees
+  body = (
+      f'{badge} [shape=plain, label=<{_badge("()", value, "#D1F2EB")}>]\n' 
+      + func.dot + "".join(a.dot for a in args)
+  )
+
+  for p, arg in zip(func.arg_ports, args):
+    body += f'{p} -> {arg.root} [weight=1];\n'
+
+  body += f'{badge} -> {func.root} [style=invis, weight=5];\n'
+
+#  for i, k in enumerate(args):
+#    body += f'{badge} -> {k.root} [style=invis, arrowhead=none, weight=0, constraint=false];\n'
+
+  cid = _new_id('cluster_app')
+  cluster = f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dotted; margin=10;\n{body}}}\n'
+  return Diagram(cluster, badge, func.left_anchor, expr, [func], [], cid)
+
+
+
+#Tests
+if __name__ == "__main__":
+  leaf1 = pred("over", 2, "ext1")
+  leaf2 = pred("under", 2, "ext1")
+
+  id1, id2 = id("A"), id("B")
+
+  conj = op("&", leaf1, leaf2, value="True")
+
+  dia = app(conj, id1, id2, value="True")
+
+  print(dia.full_dot())
+  dia.render().render(filename='diagram', format='png', cleanup=True)
+
+
+
