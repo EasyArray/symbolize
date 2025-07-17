@@ -3,7 +3,7 @@
 import itertools
 import html
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 from graphviz import Source
 
 # ---------- constants -------------------------------------------------
@@ -19,6 +19,8 @@ class Colors:
   NODE_BORDER = "#4C6A88"
   EDGE = "#17202A"
   SUBTLE_EDGE = "#D3D3D3"
+  LAM_BG = "#FDEDEC"
+  LAM_BORDER = "#A93226"
 
 # ---------- id factory ------------------------------------------------
 _id_counter = itertools.count()
@@ -50,6 +52,7 @@ class Diagram:
   arg_ports: List[str] = field(default_factory=list)
   children: List['Diagram'] = field(default_factory=list)
   cluster_id: Optional[str] = None
+  free_vars: Dict[str, List[str]] = field(default_factory=dict)
 
   def full_dot(self, name: str = "G"):
     """Generate the full Graphviz DOT representation of the diagram."""
@@ -97,7 +100,17 @@ def id(name: str) -> Diagram:
     f'{n} [label="{html.escape(name)}", shape=box, style="rounded,filled", '
           f'fillcolor="{Colors.ID_BG}", color="{Colors.ID_TEXT}"]\n'
   )
-  return Diagram(dot, n, n, name)
+  return Diagram(dot, n, n, name, [], [], None, {})
+
+def var(name: str) -> Diagram:
+  """Create a diagram for a variable."""
+  n = _new_id()
+  label = f'<<I>{html.escape(name)}</I>>'
+  dot = (
+      f'{n} [label={label}, shape=box, style="rounded,filled,dashed", '
+      f'fillcolor="#FFFFFF", color="{Colors.ID_TEXT}"]\n'
+  )
+  return Diagram(dot, n, n, name, [], [], None, {name: [n]})
 
 def pred(name: str, arity: int = 1, ext: Optional[str] = None) -> Diagram:
   """Create a diagram for a predicate with the given name and arity."""
@@ -110,7 +123,7 @@ def pred(name: str, arity: int = 1, ext: Optional[str] = None) -> Diagram:
   cid = _new_id('cluster')
   return Diagram(
     f'subgraph {cid} {{ label=""; style="solid,rounded"; margin=10;\n {dot} }}\n',
-    n, n, name, ports
+    n, n, name, ports, [], cid, {}
   )
 
 # ── operators ────────────────────────────────────────────────────────
@@ -129,7 +142,7 @@ def op(sym, *kids, value=None):
         )
   b = _new_id()
   body = (
-    f'{b} [shape=plain, label=<{_badge(sym,value)}>];\n'
+      f'{b} [shape=plain, label=<{_badge(sym,value)}>];\n'
       + "".join(k.dot for k in kids)
   )
 
@@ -147,9 +160,14 @@ def op(sym, *kids, value=None):
       body += f'{port} -> {kid_port} [weight=0, dir=none, style=dashed, color="{Colors.SUBTLE_EDGE}"];\n'
 
   cid = _new_id('cluster')
+  free: Dict[str, List[str]] = {}
+  for k in kids:
+    for name, nodes in k.free_vars.items():
+      free.setdefault(name, []).extend(nodes)
+
   return Diagram(
     f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dotted; margin=10;\n{body}}}\n',
-    b, kids[0].left_anchor, expr, ports, list(kids), cid
+    b, kids[0].left_anchor, expr, ports, list(kids), cid, free
   )
 
 # ---------- application  ----------------------
@@ -175,7 +193,43 @@ def app(func: Diagram, *args: List[Diagram], value: Optional[str] = None) -> Dia
 
   cid = _new_id('cluster_app')
   cluster = f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dotted; margin=10;\n{body}}}\n'
-  return Diagram(cluster, badge, func.left_anchor, expr, [func], [], cid)
+  free: Dict[str, List[str]] = {}
+  for part in (func, *args):
+    for name, nodes in part.free_vars.items():
+      free.setdefault(name, []).extend(nodes)
+
+  return Diagram(cluster, badge, func.left_anchor, expr, [func], [], cid, free)
+
+
+# ---------- lambda  ----------------------
+def lam(var: str, body: Diagram, value: Optional[str] = None) -> Diagram:
+  """Create a diagram for a lambda abstraction."""
+  expr = f"λ{var}.{body.expr}"
+  badge = _new_id()
+
+  dot = (
+      f'{badge} [label="λ{html.escape(var)}", shape=parallelogram, style="filled", '
+      f'fillcolor="{Colors.LAM_BG}", color="{Colors.LAM_BORDER}", fontname="monospace"]\n'
+      + body.dot
+  )
+
+  dot += f'{badge} -> {body.root} [weight=1, constraint=true];\n'
+
+  dot_ports, ports = _add_ports(1, badge)
+  dot += dot_ports
+
+  for target in body.free_vars.get(var, []):
+    dot += (
+        f'{ports[0]} -> {target} [style=dotted, color="{Colors.LAM_BORDER}", '
+        f'arrowhead=onormal, penwidth=0.8];\n'
+    )
+
+  cid = _new_id('cluster_lam')
+  cluster = (
+      f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dashed; color="{Colors.LAM_BORDER}"; margin=10;\n{dot}}}\n'
+  )
+  free = {k: list(v) for k, v in body.free_vars.items() if k != var}
+  return Diagram(cluster, badge, body.left_anchor, expr, ports, [body], cid, free)
 
 
 
