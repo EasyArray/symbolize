@@ -55,6 +55,36 @@ class RelationNode(Node):
       label = html.escape(label)
       label = f'<<FONT COLOR="green">{label}</FONT>>'
     return label
+  
+  def diagram(self):
+    """Convert to a DOT representation for graph visualization."""
+
+    from .diagram import id, app, op, pred
+
+    match(self.ast):
+      case ast.Name(id=name):
+        return pred(name)
+      case ast.Call(func=func, args=args):
+        return app(RelationNode(func).diagram(), *[id(arg.id) for arg in args])
+      case ast.BinOp(left=left, op=oper, right=right):
+        match oper:
+          case ast.BitAnd():
+            oper = '&'
+          case ast.BitOr():
+            oper = '|'
+          case ast.Add():
+            oper = '+'
+          case ast.Sub():
+            oper = '-'
+          case ast.Mult():
+            oper = '*'
+          case ast.Div():
+            oper = '/'
+          case _:
+            raise ValueError(f'Unsupported operator: {oper}')
+        return op(oper, RelationNode(left).diagram(), RelationNode(right).diagram())
+      case _:
+        return f'{self.name} [label="{self.label()}", shape=box, style=filled, fillcolor=lightgray];'
 
 
 def detectors(s): 
