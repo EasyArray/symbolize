@@ -192,7 +192,7 @@ def app(func: Diagram, *args: List[Diagram], value: Optional[str] = None) -> Dia
 #    body += f'{badge} -> {k.root} [style=invis, arrowhead=none, weight=0, constraint=false];\n'
 
   cid = _new_id('cluster_app')
-  cluster = f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dotted; margin=10;\n{body}}}\n'
+  cluster = f'subgraph {cid} {{ label="{html.escape(expr)}"; style=dashed; margin=10;\n{body}}}\n'
   free: Dict[str, List[str]] = {}
   for part in (func, *args):
     for name, nodes in part.free_vars.items():
@@ -213,15 +213,15 @@ def lam(var: str, body: Diagram, value: Optional[str] = None) -> Diagram:
       + body.dot
   )
 
-  dot += f'{badge} -> {body.root} [weight=1, constraint=true];\n'
+  dot += f'{badge} -> {body.root} [style=invis, weight=0];\n'
 
   dot_ports, ports = _add_ports(1, badge)
   dot += dot_ports
 
   for target in body.free_vars.get(var, []):
     dot += (
-        f'{ports[0]} -> {target} [style=dotted, color="{Colors.LAM_BORDER}", '
-        f'arrowhead=onormal, penwidth=0.8];\n'
+        f'{ports[0]} -> {target} [style=dotted, '
+        f'arrowhead=odot, penwidth=0.8, weight=0, constraint=false];\n'
     )
 
   cid = _new_id('cluster_lam')
