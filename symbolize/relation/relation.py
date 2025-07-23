@@ -108,11 +108,12 @@ class RelationNode(Node):
       case ast.Name(id=name):
         rel = self.value if isinstance(self.value, Relation) else None
         ar = rel.arity if rel is not None else 0
-        ext = repr(rel) if rel is not None and len(rel) > 0 else None
+        ext = repr(rel) if rel is not None else None
         return pred(name, arity=ar or 0, ext=ext)
       case ast.Call(func=func, args=args):
+        val = repr(self.eval())
         return app(RelationNode(func).diagram(),
-                   *[IdNode(arg.id).diagram() for arg in args])
+                   *[IdNode(arg.id).diagram() for arg in args], value=val)
       case ast.BinOp(left=left, op=oper, right=right):
         match oper:
           case ast.BitAnd():
@@ -129,7 +130,8 @@ class RelationNode(Node):
             oper = '/'
           case _:
             raise ValueError(f'Unsupported operator: {oper}')
-        return op(oper, RelationNode(left).diagram(), RelationNode(right).diagram())
+        val = repr(self.eval())
+        return op(oper, RelationNode(left).diagram(), RelationNode(right).diagram(), value=val)
 
 
 def detectors(s): 
