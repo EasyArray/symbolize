@@ -6,6 +6,21 @@ import ast
 import html
 from symbolize.core.node import Node
 
+
+class IdNode(Node):
+  """Node representing an individual identifier."""
+
+  def diagram(self):
+    from .diagram import id as id_diagram
+    match self.ast:
+      case ast.Name(id=name):
+        return id_diagram(name)
+      case _:
+        return id_diagram(repr(self))
+
+  def _repr_svg_(self):
+    return self.diagram().render().pipe(format='svg').decode('utf-8')
+
 def tuplify(x):
   """Convert input to a tuple if it is not already."""
   return x if isinstance(x, tuple) else (x,)
@@ -13,22 +28,42 @@ def tuplify(x):
 class Relation(set):
   """Relation class for logical relations."""
 
-  def __init__(self, s=None):
+  def __init__(self, s=None, arity=None):
     if not s:
       s = set()
     else:
       s = {tuplify(e) for e in s}
     super().__init__(s)
+    self.arity = arity
+    if self.arity is None and s:
+      self.arity = len(next(iter(s)))
+
+  def add(self, element):
+    element = tuplify(element)
+    if self.arity is None:
+      self.arity = len(element)
+    elif len(element) != self.arity:
+      raise ValueError("Arity mismatch")
+    super().add(element)
 
   def __call__(self, *args):
     n = len(args)
-    return Relation({ t[n:] for t in self if t[:n] == args})
+    result = { t[n:] for t in self if t[:n] == args}
+    ar = None
+    if self.arity is not None:
+      ar = max(self.arity - n, 0)
+    return Relation(result, ar)
 
   def __invert__(self):
     return next(iter(self))[0]
 
-  def __and__(self, other): return Relation(set(self) & set(other))
-  def __or__(self, other):  return Relation(set(self) | set(other))
+  def __and__(self, other):
+    return Relation(set(self) & set(other),
+                    self.arity if self.arity == getattr(other, 'arity', None) else self.arity)
+
+  def __or__(self, other):
+    return Relation(set(self) | set(other),
+                    self.arity if self.arity == getattr(other, 'arity', None) else self.arity)
 
   def __iadd__(self, other):  self.add(tuplify(other)); return self
   def __isub__(self, other):  self.remove(tuplify(other)); return self
@@ -55,17 +90,24 @@ class RelationNode(Node):
       label = html.escape(label)
       label = f'<<FONT COLOR="green">{label}</FONT>>'
     return label
+
+  def _repr_svg_(self):
+    return self.diagram().render().pipe(format='svg').decode('utf-8')
   
   def diagram(self):
     """Convert to a DOT representation for graph visualization."""
 
-    from .diagram import id, app, op, pred
+    from .diagram import app, op, pred
 
     match(self.ast):
       case ast.Name(id=name):
-        return pred(name)
+        rel = self.value if isinstance(self.value, Relation) else None
+        ar = rel.arity if rel else 0
+        ext = repr(rel) if rel and len(rel) > 0 else None
+        return pred(name, arity=ar or 0, ext=ext)
       case ast.Call(func=func, args=args):
-        return app(RelationNode(func).diagram(), *[id(arg.id) for arg in args])
+        return app(RelationNode(func).diagram(),
+                   *[IdNode(arg.id).diagram() for arg in args])
       case ast.BinOp(left=left, op=oper, right=right):
         match oper:
           case ast.BitAnd():
@@ -93,5 +135,5 @@ def detectors(s):
 
 def ids(s):
   """Convert a string of symbols characters into a generator of Nodes."""
-  return (Node(c, c) for c in s)
+  return (IdNode(c, c) for c in s)
 
