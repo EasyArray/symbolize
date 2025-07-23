@@ -58,6 +58,11 @@ class Relation(set):
     return next(iter(self))[0]
 
   def __and__(self, other):
+    if isinstance(other, Relation):
+      if other.arity is None: #Empty relation
+        other.arity = self.arity
+      if self.arity != other.arity:
+        raise ValueError("Arity mismatch for intersection")
     return Relation(set(self) & set(other),
                     self.arity if self.arity == getattr(other, 'arity', None) else self.arity)
 
@@ -102,8 +107,8 @@ class RelationNode(Node):
     match(self.ast):
       case ast.Name(id=name):
         rel = self.value if isinstance(self.value, Relation) else None
-        ar = rel.arity if rel else 0
-        ext = repr(rel) if rel and len(rel) > 0 else None
+        ar = rel.arity if rel is not None else 0
+        ext = repr(rel) if rel is not None and len(rel) > 0 else None
         return pred(name, arity=ar or 0, ext=ext)
       case ast.Call(func=func, args=args):
         return app(RelationNode(func).diagram(),
@@ -125,8 +130,6 @@ class RelationNode(Node):
           case _:
             raise ValueError(f'Unsupported operator: {oper}')
         return op(oper, RelationNode(left).diagram(), RelationNode(right).diagram())
-      case _:
-        return f'{self.name} [label="{self.label()}", shape=box, style=filled, fillcolor=lightgray];'
 
 
 def detectors(s): 
